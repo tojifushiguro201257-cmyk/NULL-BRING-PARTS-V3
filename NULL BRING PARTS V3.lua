@@ -1,4 +1,4 @@
--- NULL BRING PARTS v3
+-- NULL BRING PARTS v3 
 
 local Gui = Instance.new("ScreenGui")
 local Main = Instance.new("Frame")
@@ -10,8 +10,8 @@ local ContentFrame = Instance.new("Frame")
 local Box = Instance.new("TextBox")
 local Button = Instance.new("TextButton")
 
--- Configuración de la GUI
-Gui.Name = "NULL_BRING_PARTS_V2"
+-- Configuración de la GUI (Estética Original)
+Gui.Name = "NULL_BRING_PARTS_V3"
 Gui.Parent = gethui()
 Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
@@ -107,7 +107,7 @@ Button.TextColor3 = Color3.fromRGB(0, 0, 0)
 Button.TextSize = 18
 
 -----------------------------------------------------------
--- LÓGICA DE ATRACCIÓN (Mejorada)
+-- LÓGICA DE RED Y ATRACCIÓN (Integrada)
 -----------------------------------------------------------
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -118,34 +118,56 @@ local selectedPlayer = nil
 local blackHoleActive = false
 local DescendantAddedConnection
 
+-- Punto de atracción
 local Folder = Instance.new("Folder", Workspace)
-local Part = Instance.new("Part", Folder)
-local Attachment1 = Instance.new("Attachment", Part)
-Part.Anchored = true
-Part.CanCollide = false
-Part.Transparency = 1
+local PartTarget = Instance.new("Part", Folder)
+local Attachment1 = Instance.new("Attachment", PartTarget)
+PartTarget.Anchored = true
+PartTarget.CanCollide = false
+PartTarget.Transparency = 1
 
+-- Network & Simulation Radius
 if not getgenv().Network then
-    getgenv().Network = {BaseParts = {}, Velocity = Vector3.new(14.46, 14.46, 14.46)}
+    getgenv().Network = {
+        BaseParts = {},
+        Velocity = Vector3.new(14.4626, 14.4626, 14.4626)
+    }
+    
     RunService.Heartbeat:Connect(function()
         sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
+        if blackHoleActive then
+            for _, p in pairs(getgenv().Network.BaseParts) do
+                if p:IsDescendantOf(Workspace) and not p.Anchored then
+                    p.Velocity = getgenv().Network.Velocity
+                end
+            end
+        end
     end)
 end
 
--- Función para evitar colisión local con las partes atraídas
-local function NoCollide(v)
-    if v:IsA("BasePart") and not v.Anchored and not v.Parent:FindFirstChildOfClass("Humanoid") then
-        v.CanCollide = false
-    end
-end
-
 local function ForcePart(v)
-    if v:IsA("BasePart") and not v.Anchored and not v.Parent:FindFirstChildOfClass("Humanoid") and v.Name ~= "Handle" then
-        -- Aplicamos el NoCollide al momento de forzar la parte
-        NoCollide(v)
+    if v:IsA("BasePart") and not v.Anchored and not v.Parent:FindFirstChildOfClass("Humanoid") and not v.Parent:FindFirstChild("Head") and v.Name ~= "Handle" then
         
+        -- Limpiar fuerzas previas para evitar conflictos
+        for _, x in ipairs(v:GetChildren()) do
+            if x:IsA("BodyMover") or x:IsA("RocketPropulsion") or x:IsA("AlignPosition") or x:IsA("Torque") then
+                x:Destroy()
+            end
+        end
+
+        v.CanCollide = false
+        v.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+        table.insert(getgenv().Network.BaseParts, v)
+
         local Attachment2 = v:FindFirstChild("Attachment") or Instance.new("Attachment", v)
-        local AlignPos = v:FindFirstChild("AlignPosition") or Instance.new("AlignPosition", v)
+        
+        -- Torque (Fuerza del segundo script para evitar giros locos)
+        local Torque = Instance.new("Torque", v)
+        Torque.Attachment0 = Attachment2
+        Torque.Torque = Vector3.new(100000, 100000, 100000)
+
+        -- AlignPosition (Atracción máxima)
+        local AlignPos = Instance.new("AlignPosition", v)
         AlignPos.MaxForce = math.huge
         AlignPos.MaxVelocity = math.huge
         AlignPos.Responsiveness = 200
@@ -176,7 +198,6 @@ MinimizeBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
     ContentFrame.Visible = not minimized
     Main.Size = minimized and UDim2.new(0, 300, 0, 28) or UDim2.new(0, 300, 0, 160)
-    MinimizeBtn.Text = "-"
 end)
 
 Box.FocusLost:Connect(function(enter)
@@ -204,23 +225,23 @@ local function toggleBlackHole()
         -- Detectar partes nuevas
         DescendantAddedConnection = Workspace.DescendantAdded:Connect(function(v)
             if blackHoleActive then 
+                task.wait(0.1)
                 ForcePart(v) 
             end
         end)
 
-        -- Bucle de posición y mantenimiento de colisiones desactivadas
+        -- Bucle de posición y traspaso de bloques (Nocollide)
         task.spawn(function()
             while blackHoleActive do
                 if selectedPlayer and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    PartTarget.CFrame = selectedPlayer.Character.HumanoidRootPart.CFrame
                     Attachment1.WorldCFrame = selectedPlayer.Character.HumanoidRootPart.CFrame
                 end
                 
-                -- Refuerzo local de NoCollide (por si el juego intenta resetear colisiones)
-                if LocalPlayer.Character then
-                    for _, v in ipairs(Workspace:GetDescendants()) do
-                        if v:IsA("BasePart") and v:FindFirstChild("AlignPosition") then
-                            v.CanCollide = false
-                        end
+                -- Forzar que atraviesen bloques constantemente
+                for _, p in pairs(getgenv().Network.BaseParts) do
+                    if p:IsDescendantOf(Workspace) then
+                        p.CanCollide = false
                     end
                 end
                 
@@ -230,6 +251,7 @@ local function toggleBlackHole()
     else
         Button.Text = "BRING: OFF"
         if DescendantAddedConnection then DescendantAddedConnection:Disconnect() end
+        getgenv().Network.BaseParts = {}
     end
 end
 
@@ -238,6 +260,6 @@ Button.MouseButton1Click:Connect(function()
         toggleBlackHole()
     else
         Box.Text = "Selecciona un jugador"
+        task.delay(1, function() Box.Text = "" end)
     end
 end)
-
